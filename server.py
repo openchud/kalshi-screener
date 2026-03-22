@@ -53,11 +53,18 @@ def fetch_pages(extra_params="", max_pages=MAX_PAGES):
 
 # Series to fetch specifically (high-value non-sports categories)
 PRIORITY_SERIES = [
+    # Finance
     "KXBTC", "KXETH", "KXSP500", "KXNAS", "KXDOW",
-    "KXCPI", "KXGDP", "KXFED",
-    "KXHIGHNY", "KXHIGHCHI", "KXHIGHLA",
-    "KXINX", "KXTARIFF", "KXCEASEFIRE",
-    "KXTSLA", "KXNVDA", "KXAAPL", "KXAMZN", "KXGOOG",
+    "KXTSLA", "KXNVDA", "KXAAPL", "KXAMZN", "KXGOOG", "KXCOIN",
+    # Economics
+    "KXCPI", "KXGDP", "KXFED", "KXPCE", "KXISM", "KXJOB", "KXUNEMPLOY",
+    # Weather
+    "KXHIGHNY", "KXHIGHCHI", "KXHIGHLA", "KXHIGHMIA", "KXHIGHATL",
+    "KXLOWNY", "KXLOWCHI",
+    # Politics/Policy
+    "KXPRES", "KXTARIFF", "KXCEASEFIRE", "KXUKRAINE",
+    # Index/Other
+    "KXINX", "KXBALANCE",
 ]
 
 
@@ -139,6 +146,21 @@ def score(m):
     ps = (1.0 - min(1, abs(2*(mid-0.5)))*0.5) if mid > 0 else 0.3
     comp = ls*0.30 + vs*0.25 + ss*0.20 + ts*0.15 + ps*0.10
 
+    # Signal detection: flag interesting market conditions
+    signals = []
+    if v24 > 1000 and sp <= 0.02:
+        signals.append("tight")      # High-volume tight spread = liquid & efficient
+    if v24 > 500 and sp >= 0.10:
+        signals.append("wide")       # High-volume wide spread = opportunity
+    if htc and 0 < htc < 6 and v24 > 100:
+        signals.append("expiring")   # Expiring soon with activity
+    if lp > 0 and yb > 0:
+        move = abs(lp - yb) / max(lp, 0.01)
+        if move > 0.15 and v24 > 50:
+            signals.append("moving")  # Price moved significantly from last trade
+    if oi > 5000 and 0.35 <= mid <= 0.65:
+        signals.append("contested")  # High OI near 50/50 = genuine uncertainty
+
     return {
         "ticker": m["ticker"], "title": m.get("title",""), "subtitle": m.get("subtitle",""),
         "event_ticker": m.get("event_ticker",""), "category": category(m["ticker"]),
@@ -146,6 +168,7 @@ def score(m):
         "volume": int(vol), "volume_24h": int(v24), "open_interest": int(oi),
         "liquidity_score": round(ls,3), "composite_score": round(comp,4),
         "close_time": ct, "hours_to_close": htc, "status": m.get("status",""),
+        "signals": signals,
     }
 
 

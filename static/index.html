@@ -37,6 +37,12 @@
   .spread-wide { color: var(--red); }
   .spread-mid { color: var(--yellow); }
   .cat-badge { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--dim); }
+  .signal { display: inline-block; border-radius: 3px; padding: 1px 5px; font-size: 10px; font-weight: 600; margin-right: 3px; }
+  .signal-tight { background: rgba(63,185,80,0.15); color: var(--green); }
+  .signal-wide { background: rgba(248,81,73,0.15); color: var(--red); }
+  .signal-expiring { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .signal-moving { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .signal-contested { background: rgba(188,143,243,0.15); color: #bc8ff3; }
   .time-urgent { color: var(--red); font-weight: 600; }
   .time-soon { color: var(--yellow); }
   .time-later { color: var(--dim); }
@@ -62,6 +68,15 @@
       <option value="72">< 3 days</option>
       <option value="168">< 1 week</option>
       <option value="720">< 30 days</option>
+    </select>
+    <select id="signal-filter">
+      <option value="">Any Signal</option>
+      <option value="tight">🟢 Tight Spread</option>
+      <option value="wide">🔴 Wide Spread</option>
+      <option value="expiring">🟡 Expiring</option>
+      <option value="moving">🔵 Moving</option>
+      <option value="contested">🟣 Contested</option>
+      <option value="any">⚡ Has Signal</option>
     </select>
     <select id="sort-by">
       <option value="composite_score">Score</option>
@@ -90,6 +105,7 @@
           <th data-col="open_interest">OI</th>
           <th data-col="composite_score">Score</th>
           <th data-col="hours_to_close">Expires</th>
+          <th>Signals</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -144,6 +160,9 @@ function renderTable() {
     if (search && !m.ticker.toLowerCase().includes(search) && !m.title.toLowerCase().includes(search) && !m.category.toLowerCase().includes(search)) return false;
     if (cat && m.category !== cat) return false;
     if (time && (m.hours_to_close === null || m.hours_to_close > time)) return false;
+    const sig = document.getElementById('signal-filter').value;
+    if (sig === 'any' && (!m.signals || m.signals.length === 0)) return false;
+    if (sig && sig !== 'any' && (!m.signals || !m.signals.includes(sig))) return false;
     return true;
   });
 
@@ -181,6 +200,7 @@ function renderTable() {
     <td>${fmtNum(m.open_interest)}</td>
     <td><span class="score-bar" style="width:${Math.round(m.composite_score * 80)}px"></span> ${(m.composite_score * 100).toFixed(0)}</td>
     <td class="${m.hours_to_close !== null && m.hours_to_close < 6 ? 'time-urgent' : m.hours_to_close !== null && m.hours_to_close < 24 ? 'time-soon' : 'time-later'}">${fmtTime(m.hours_to_close)}</td>
+    <td>${(m.signals||[]).map(s => '<span class="signal signal-'+s+'">'+s+'</span>').join('')}</td>
   </tr>`}).join('');
 
   document.getElementById('loading').style.display = 'none';
@@ -214,6 +234,7 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 document.getElementById('search').addEventListener('input', renderTable);
 document.getElementById('category-filter').addEventListener('change', renderTable);
 document.getElementById('time-filter').addEventListener('change', renderTable);
+document.getElementById('signal-filter').addEventListener('change', renderTable);
 document.getElementById('sort-by').addEventListener('change', e => { sortCol = e.target.value; renderTable(); });
 
 document.querySelectorAll('th[data-col]').forEach(th => {

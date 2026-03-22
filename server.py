@@ -213,6 +213,54 @@ def refresh_loop():
         time.sleep(180)
 
 
+def compute_events():
+    """Group markets by event and summarize each event."""
+    with LOCK:
+        markets = CACHE["markets"]
+    events = {}
+    for m in markets:
+        et = m.get("event_ticker", "")
+        if not et:
+            continue
+        if et not in events:
+            events[et] = {"event_ticker": et, "category": m["category"], "markets": []}
+        events[et]["markets"].append(m)
+
+    result = []
+    for et, ev in events.items():
+        mkts = ev["markets"]
+        total_vol24 = sum(m["volume_24h"] for m in mkts)
+        total_oi = sum(m["open_interest"] for m in mkts)
+        avg_spread = sum(m["spread"] for m in mkts) / len(mkts) if mkts else 0
+        bid_sum = sum(m["yes_bid"] for m in mkts)
+        ask_sum = sum(m["yes_ask"] for m in mkts)
+        # Find the "favorite" — market with highest mid price
+        best = max(mkts, key=lambda m: (m["yes_bid"] + m["yes_ask"]) / 2)
+        best_mid = (best["yes_bid"] + best["yes_ask"]) / 2
+        # All signals across child markets
+        all_signals = list(set(s for m in mkts for s in m.get("signals", [])))
+        htc = best.get("hours_to_close")
+
+        result.append({
+            "event_ticker": et,
+            "title": best["title"][:80],
+            "category": ev["category"],
+            "market_count": len(mkts),
+            "volume_24h": total_vol24,
+            "open_interest": total_oi,
+            "avg_spread": round(avg_spread, 4),
+            "bid_sum": round(bid_sum, 3),
+            "ask_sum": round(ask_sum, 3),
+            "favorite_ticker": best["ticker"],
+            "favorite_mid": round(best_mid, 3),
+            "hours_to_close": htc,
+            "signals": all_signals,
+        })
+
+    result.sort(key=lambda x: -x["volume_24h"])
+    return {"events": result, "total_events": len(result)}
+
+
 def compute_stats():
     """Compute aggregate market stats for the pulse endpoint."""
     with LOCK:
@@ -277,6 +325,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(data.encode())
+        elif self.path == "/api/events":
+            self._json_response(compute_events())
         elif self.path == "/api/stats":
             self._json_response(compute_stats())
         elif self.path == "/api/health":

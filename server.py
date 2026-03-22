@@ -106,7 +106,7 @@ def pdol(s):
 def category(ticker):
     t = ticker.upper()
     sports = ["KXNBA","KXNFL","KXNHL","KXMLB","KXNCAA","KXMLS","KXEPL","KXWTA","KXATP","KXUFC","KXPGA","KXF1"]
-    finance = ["KXSP500","KXBTC","KXETH","KXNAS","KXDOW","KXTSLA","KXAAPL","KXAMZN","KXGOOG","KXNVDA","KXCOIN"]
+    finance = ["KXSP500","KXBTC","KXETH","KXNAS","KXDOW","KXTSLA","KXAAPL","KXAMZN","KXGOOG","KXNVDA","KXCOIN","KXINX","KXRUT","KXVIX"]
     econ = ["KXCPI","KXGDP","KXFED","KXINFL","KXJOB","KXUNEMPLOY","KXPCE","KXISM","KXRATE"]
     weather = ["KXHIGH","KXLOW","KXRAIN","KXTEMP","KXSNOW"]
     politics = ["KXPRES","KXSEN","KXHOUSE","KXGOV","KXPOL","KXELECT"]
@@ -189,7 +189,62 @@ def refresh_loop():
         time.sleep(180)
 
 
+def compute_stats():
+    """Compute aggregate market stats for the pulse endpoint."""
+    with LOCK:
+        markets = CACHE["markets"]
+        updated = CACHE["updated_at"]
+    if not markets:
+        return {"error": "no data yet"}
+
+    cats = {}
+    total_vol24 = 0
+    total_oi = 0
+    signals_count = {}
+    tight_count = 0
+    contested = []
+
+    for m in markets:
+        c = m["category"]
+        cats[c] = cats.get(c, 0) + 1
+        total_vol24 += m["volume_24h"]
+        total_oi += m["open_interest"]
+        for s in m.get("signals", []):
+            signals_count[s] = signals_count.get(s, 0) + 1
+        if m["spread"] <= 0.02 and m["yes_bid"] > 0:
+            tight_count += 1
+        if m.get("signals") and "contested" in m["signals"]:
+            contested.append({"ticker": m["ticker"], "title": m["title"][:60],
+                              "mid": round((m["yes_bid"]+m["yes_ask"])/2, 3),
+                              "volume_24h": m["volume_24h"]})
+
+    # Top movers
+    movers = sorted([m for m in markets if m.get("signals") and "moving" in m["signals"]],
+                    key=lambda x: -x["volume_24h"])[:5]
+
+    return {
+        "total_markets": len(markets),
+        "categories": dict(sorted(cats.items(), key=lambda x: -x[1])),
+        "total_24h_volume": total_vol24,
+        "total_open_interest": total_oi,
+        "signals": signals_count,
+        "tight_spread_markets": tight_count,
+        "contested_markets": contested[:5],
+        "top_movers": [{"ticker": m["ticker"], "title": m["title"][:60],
+                        "volume_24h": m["volume_24h"], "last_price": m["last_price"]}
+                       for m in movers],
+        "updated_at": updated,
+    }
+
+
 class Handler(SimpleHTTPRequestHandler):
+    def _json_response(self, data):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
     def do_GET(self):
         if self.path == "/api/markets":
             with LOCK: data = json.dumps(CACHE)
@@ -198,6 +253,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(data.encode())
+        elif self.path == "/api/stats":
+            self._json_response(compute_stats())
         elif self.path == "/api/health":
             self.send_response(200)
             self.end_headers()

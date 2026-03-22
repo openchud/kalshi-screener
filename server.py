@@ -172,6 +172,29 @@ def score(m):
     }
 
 
+SNAPSHOTS_DIR = Path(__file__).parent / "data" / "snapshots"
+SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def save_snapshot(scored):
+    """Save compact snapshot of top/signaled markets for historical analysis."""
+    now = datetime.now(timezone.utc)
+    signaled = [m for m in scored if m.get("signals")]
+    snapshot = {
+        "ts": now.isoformat(),
+        "n": len(scored),
+        "top": [{k: m[k] for k in ("ticker","category","yes_bid","yes_ask","spread",
+                                     "volume_24h","open_interest","composite_score",
+                                     "signals","hours_to_close")} for m in scored[:20]],
+        "signals": [{k: m[k] for k in ("ticker","category","yes_bid","yes_ask","spread",
+                                         "volume_24h","open_interest","composite_score",
+                                         "signals","hours_to_close")} for m in signaled[:50]],
+    }
+    fname = SNAPSHOTS_DIR / f"{now.strftime('%Y-%m-%d')}.jsonl"
+    with open(fname, "a") as f:
+        f.write(json.dumps(snapshot) + "\n")
+
+
 def refresh_loop():
     while True:
         try:
@@ -182,6 +205,7 @@ def refresh_loop():
                 CACHE["markets"] = scored
                 CACHE["updated_at"] = datetime.now(timezone.utc).isoformat()
                 CACHE["total_markets"] = len(scored)
+            save_snapshot(scored)
             print(f"[{datetime.now(timezone.utc).isoformat()}] Cached {len(scored)} markets", flush=True)
         except Exception as e:
             print(f"[{datetime.now(timezone.utc).isoformat()}] ERROR: {e}", flush=True)

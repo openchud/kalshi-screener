@@ -31,6 +31,8 @@
   .title-cell { white-space: normal; max-width: 350px; line-height: 1.3; }
   .price { font-family: 'SF Mono', SFMono-Regular, Consolas, monospace; }
   .score-bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--accent); }
+  .vol-bar { display: inline-block; height: 4px; border-radius: 2px; background: var(--green); opacity: 0.7; margin-right: 6px; vertical-align: middle; }
+  .hot { color: var(--red); font-size: 11px; margin-left: 4px; }
   .spread-tight { color: var(--green); }
   .spread-wide { color: var(--red); }
   .spread-mid { color: var(--yellow); }
@@ -160,20 +162,26 @@ function renderTable() {
     `<span>Avg spread: <b>${(filtered.reduce((s,m) => s + m.spread, 0) / (filtered.length||1) * 100).toFixed(1)}¢</b></span>` +
     `<span>Total 24h vol: <b>${(filtered.reduce((s,m) => s + m.volume_24h, 0)).toLocaleString()}</b></span>`;
 
+  // Find max volume for bar scaling
+  const maxVol = Math.max(...filtered.map(m => m.volume_24h), 1);
+
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = filtered.slice(0, 500).map(m => `<tr>
-    <td class="ticker"><a href="https://kalshi.com/markets/${m.event_ticker}/${m.ticker}" target="_blank">${m.ticker}</a></td>
+  tbody.innerHTML = filtered.slice(0, 500).map(m => {
+    const volPct = Math.round((m.volume_24h / maxVol) * 60);
+    const isHot = m.volume_24h > 10000 || m.open_interest > 5000;
+    return `<tr>
+    <td class="ticker"><a href="https://kalshi.com/markets/${m.event_ticker}/${m.ticker}" target="_blank">${m.ticker}</a>${isHot ? '<span class="hot">🔥</span>' : ''}</td>
     <td class="title-cell">${esc(m.title)}</td>
     <td><span class="cat-badge">${esc(m.category || '—')}</span></td>
     <td class="price">${(m.yes_bid * 100).toFixed(0)}¢</td>
     <td class="price">${(m.yes_ask * 100).toFixed(0)}¢</td>
     <td class="price ${m.spread < 0.05 ? 'spread-tight' : m.spread < 0.15 ? 'spread-mid' : 'spread-wide'}">${(m.spread * 100).toFixed(0)}¢</td>
     <td class="price">${(m.last_price * 100).toFixed(0)}¢</td>
-    <td>${m.volume_24h.toLocaleString()}</td>
-    <td>${m.open_interest.toLocaleString()}</td>
+    <td><span class="vol-bar" style="width:${volPct}px"></span>${fmtNum(m.volume_24h)}</td>
+    <td>${fmtNum(m.open_interest)}</td>
     <td><span class="score-bar" style="width:${Math.round(m.composite_score * 80)}px"></span> ${(m.composite_score * 100).toFixed(0)}</td>
     <td class="${m.hours_to_close !== null && m.hours_to_close < 6 ? 'time-urgent' : m.hours_to_close !== null && m.hours_to_close < 24 ? 'time-soon' : 'time-later'}">${fmtTime(m.hours_to_close)}</td>
-  </tr>`).join('');
+  </tr>`}).join('');
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('market-table').style.display = '';
@@ -183,6 +191,12 @@ function renderTable() {
     th.classList.remove('sorted-asc', 'sorted-desc');
     if (th.dataset.col === sortCol) th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
   });
+}
+
+function fmtNum(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toLocaleString();
 }
 
 function fmtTime(h) {

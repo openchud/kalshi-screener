@@ -66,7 +66,7 @@
   </header>
 
   <div class="controls">
-    <input type="text" id="search" placeholder="Search markets... (ticker, title, category)">
+    <input type="text" id="search" placeholder="Search markets... (/ to focus, Esc to clear)">
     <select id="category-filter"><option value="">All Categories</option></select>
     <select id="time-filter">
       <option value="">Any Expiry</option>
@@ -286,6 +286,19 @@ document.querySelectorAll('th[data-col]').forEach(th => {
     document.getElementById('sort-by').value = col;
     renderTable();
   });
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+    e.preventDefault();
+    document.getElementById('search').focus();
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('search').value = '';
+    document.getElementById('search').blur();
+    renderTable();
+  }
 });
 
 // Initial fetch + auto-refresh

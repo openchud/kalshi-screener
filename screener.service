@@ -1,0 +1,14 @@
+[Unit]
+Description=Kalshi Market Screener
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -u /root/.openclaw/workspace/screener/server.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

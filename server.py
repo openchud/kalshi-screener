@@ -10,6 +10,7 @@ sys.stdout.reconfigure(line_buffering=True)
 KALSHI_API = "https://api.elections.kalshi.com/trade-api/v2"
 MAX_PAGES = 10  # Cap at ~2000 markets to avoid rate limits
 CACHE = {"markets": [], "updated_at": None, "total_markets": 0}
+PREV_PRICES = {}  # ticker -> (yes_bid, yes_ask, last_price, timestamp)
 LOCK = threading.Lock()
 
 
@@ -201,9 +202,21 @@ def refresh_loop():
             print(f"[{datetime.now(timezone.utc).isoformat()}] Fetching...", flush=True)
             raw = fetch_markets()
             scored = sorted([s for s in (score(m) for m in raw) if s], key=lambda x: -x["composite_score"])
+            # Compute price changes from previous cycle
+            now_ts = datetime.now(timezone.utc).isoformat()
+            for m in scored:
+                tk = m["ticker"]
+                mid = (m["yes_bid"] + m["yes_ask"]) / 2
+                prev = PREV_PRICES.get(tk)
+                if prev:
+                    prev_mid = (prev[0] + prev[1]) / 2
+                    m["price_change"] = round(mid - prev_mid, 4)
+                else:
+                    m["price_change"] = 0.0
+                PREV_PRICES[tk] = (m["yes_bid"], m["yes_ask"], m["last_price"], now_ts)
             with LOCK:
                 CACHE["markets"] = scored
-                CACHE["updated_at"] = datetime.now(timezone.utc).isoformat()
+                CACHE["updated_at"] = now_ts
                 CACHE["total_markets"] = len(scored)
             save_snapshot(scored)
             print(f"[{datetime.now(timezone.utc).isoformat()}] Cached {len(scored)} markets", flush=True)
@@ -290,9 +303,11 @@ def compute_stats():
                               "mid": round((m["yes_bid"]+m["yes_ask"])/2, 3),
                               "volume_24h": m["volume_24h"]})
 
-    # Top movers
-    movers = sorted([m for m in markets if m.get("signals") and "moving" in m["signals"]],
-                    key=lambda x: -x["volume_24h"])[:5]
+    # Top movers by actual price change
+    movers_up = sorted([m for m in markets if m.get("price_change", 0) > 0.01],
+                       key=lambda x: -x.get("price_change", 0))[:5]
+    movers_down = sorted([m for m in markets if m.get("price_change", 0) < -0.01],
+                         key=lambda x: x.get("price_change", 0))[:5]
 
     return {
         "total_markets": len(markets),
@@ -302,9 +317,12 @@ def compute_stats():
         "signals": signals_count,
         "tight_spread_markets": tight_count,
         "contested_markets": contested[:5],
-        "top_movers": [{"ticker": m["ticker"], "title": m["title"][:60],
-                        "volume_24h": m["volume_24h"], "last_price": m["last_price"]}
-                       for m in movers],
+        "movers_up": [{"ticker": m["ticker"], "title": m["title"][:60],
+                       "price_change": m.get("price_change", 0), "volume_24h": m["volume_24h"]}
+                      for m in movers_up],
+        "movers_down": [{"ticker": m["ticker"], "title": m["title"][:60],
+                         "price_change": m.get("price_change", 0), "volume_24h": m["volume_24h"]}
+                        for m in movers_down],
         "updated_at": updated,
     }
 

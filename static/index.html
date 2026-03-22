@@ -115,6 +115,7 @@
           <th data-col="volume_24h">24h Vol</th>
           <th data-col="open_interest">OI</th>
           <th data-col="composite_score">Score</th>
+          <th data-col="price_change">Chg</th>
           <th data-col="hours_to_close">Expires</th>
           <th>Signals</th>
         </tr>
@@ -240,6 +241,7 @@ function renderTable() {
     <td><span class="vol-bar" style="width:${volPct}px"></span>${fmtNum(m.volume_24h)}</td>
     <td>${fmtNum(m.open_interest)}</td>
     <td><span class="score-bar" style="width:${Math.round(m.composite_score * 80)}px"></span> ${(m.composite_score * 100).toFixed(0)}</td>
+    <td class="price ${(m.price_change||0) > 0.005 ? 'spread-tight' : (m.price_change||0) < -0.005 ? 'spread-wide' : ''}">${fmtChg(m.price_change)}</td>
     <td class="${m.hours_to_close !== null && m.hours_to_close < 6 ? 'time-urgent' : m.hours_to_close !== null && m.hours_to_close < 24 ? 'time-soon' : 'time-later'}">${fmtTime(m.hours_to_close)}</td>
     <td>${(m.signals||[]).map(s => '<span class="signal signal-'+s+'">'+s+'</span>').join('')}</td>
   </tr>`}).join('');
@@ -258,6 +260,12 @@ function fmtNum(n) {
   if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n/1000).toFixed(1) + 'K';
   return n.toLocaleString();
+}
+
+function fmtChg(c) {
+  if (!c || Math.abs(c) < 0.001) return '—';
+  const cents = (c * 100).toFixed(1);
+  return c > 0 ? `+${cents}¢` : `${cents}¢`;
 }
 
 function fmtTime(h) {

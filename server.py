@@ -327,6 +327,38 @@ def compute_stats():
     }
 
 
+def load_history(ticker, days=7):
+    """Load price history for a ticker from snapshot files."""
+    history = []
+    now = datetime.now(timezone.utc)
+    for d in range(days, -1, -1):
+        dt = now - __import__('datetime').timedelta(days=d)
+        fname = SNAPSHOTS_DIR / f"{dt.strftime('%Y-%m-%d')}.jsonl"
+        if not fname.exists():
+            continue
+        try:
+            with open(fname) as f:
+                for line in f:
+                    snap = json.loads(line)
+                    for m in snap.get("top", []) + snap.get("signals", []):
+                        if m["ticker"] == ticker:
+                            mid = (m["yes_bid"] + m["yes_ask"]) / 2
+                            history.append({"ts": snap["ts"], "mid": round(mid, 4),
+                                            "bid": m["yes_bid"], "ask": m["yes_ask"],
+                                            "vol": m.get("volume_24h", 0)})
+                            break
+        except Exception:
+            continue
+    # Deduplicate by timestamp
+    seen = set()
+    deduped = []
+    for h in history:
+        if h["ts"] not in seen:
+            seen.add(h["ts"])
+            deduped.append(h)
+    return deduped
+
+
 class Handler(SimpleHTTPRequestHandler):
     def _json_response(self, data):
         self.send_response(200)
@@ -343,6 +375,15 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(data.encode())
+        elif self.path.startswith("/api/history"):
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            ticker = qs.get("ticker", [""])[0]
+            days = int(qs.get("days", ["7"])[0])
+            if not ticker:
+                self._json_response({"error": "ticker required"})
+            else:
+                self._json_response({"ticker": ticker, "history": load_history(ticker, min(days, 30))})
         elif self.path == "/api/events":
             self._json_response(compute_events())
         elif self.path == "/api/stats":

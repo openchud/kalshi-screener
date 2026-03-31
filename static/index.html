@@ -61,6 +61,9 @@
   .hot-card .hot-price { font-family: 'SF Mono', SFMono-Regular, Consolas, monospace; font-size: 18px; font-weight: 600; color: var(--accent); }
   .hot-card a { color: var(--text); text-decoration: none; }
   .hot-card a:hover { color: var(--accent); }
+  .sparkline { display: inline-block; vertical-align: middle; margin-left: 4px; cursor: pointer; }
+  .sparkline svg { vertical-align: middle; }
+  .spark-tooltip { position: fixed; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text); z-index: 100; pointer-events: none; display: none; }
   .footer { text-align: center; padding: 24px 0; color: var(--dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 24px; }
   .footer a { color: var(--accent); text-decoration: none; }
   .loading { text-align: center; padding: 60px 0; color: var(--dim); }
@@ -124,6 +127,7 @@
           <th data-col="volume_24h">24h Vol</th>
           <th data-col="open_interest">OI</th>
           <th data-col="composite_score">Score</th>
+          <th>Trend</th>
           <th data-col="price_change">Chg</th>
           <th data-col="hours_to_close">Expires</th>
           <th>Signals</th>
@@ -250,6 +254,7 @@ function renderTable() {
     <td><span class="vol-bar" style="width:${volPct}px"></span>${fmtNum(m.volume_24h)}</td>
     <td>${fmtNum(m.open_interest)}</td>
     <td><span class="score-bar" style="width:${Math.round(m.composite_score * 80)}px"></span> ${(m.composite_score * 100).toFixed(0)}</td>
+    <td><span class="sparkline" data-ticker="${m.ticker}"></span></td>
     <td class="price ${(m.price_change||0) > 0.005 ? 'spread-tight' : (m.price_change||0) < -0.005 ? 'spread-wide' : ''}">${fmtChg(m.price_change)}</td>
     <td class="${m.hours_to_close !== null && m.hours_to_close < 6 ? 'time-urgent' : m.hours_to_close !== null && m.hours_to_close < 24 ? 'time-soon' : 'time-later'}">${fmtTime(m.hours_to_close)}</td>
     <td>${(m.signals||[]).map(s => '<span class="signal signal-'+s+'">'+s+'</span>').join('')}</td>
@@ -257,6 +262,9 @@ function renderTable() {
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('market-table').style.display = '';
+
+  // Observe sparkline placeholders
+  document.querySelectorAll('.sparkline[data-ticker]').forEach(el => sparkObserver.observe(el));
 
   // Update header sort indicators
   document.querySelectorAll('th[data-col]').forEach(th => {
@@ -317,6 +325,44 @@ document.addEventListener('keydown', e => {
     renderTable();
   }
 });
+
+// Sparkline support
+const sparkCache = {};
+function mkSparkline(pts, w=60, h=16) {
+  if (!pts || pts.length < 2) return '';
+  const vals = pts.map(p => p.mid);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const range = mx - mn || 0.01;
+  const coords = vals.map((v, i) => `${(i/(vals.length-1)*w).toFixed(1)},${(h - (v-mn)/range*h).toFixed(1)}`);
+  const color = vals[vals.length-1] >= vals[0] ? 'var(--green)' : 'var(--red)';
+  return `<svg width="${w}" height="${h}" class="sparkline"><polyline points="${coords.join(' ')}" fill="none" stroke="${color}" stroke-width="1.2"/></svg>`;
+}
+
+async function loadSparkline(ticker, el) {
+  if (sparkCache[ticker]) { el.innerHTML = mkSparkline(sparkCache[ticker]); return; }
+  try {
+    const r = await fetch(`/api/history?ticker=${encodeURIComponent(ticker)}&days=3`);
+    const d = await r.json();
+    if (d.history && d.history.length >= 2) {
+      sparkCache[ticker] = d.history;
+      el.innerHTML = mkSparkline(d.history);
+    }
+  } catch(e) {}
+}
+
+// Lazy-load sparklines for visible rows
+const sparkObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const el = e.target;
+      const ticker = el.dataset.ticker;
+      if (ticker && !el.dataset.loaded) {
+        el.dataset.loaded = '1';
+        loadSparkline(ticker, el);
+      }
+    }
+  });
+}, { rootMargin: '100px' });
 
 // Initial fetch + auto-refresh
 fetchMarkets();
